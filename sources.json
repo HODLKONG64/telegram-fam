@@ -1,54 +1,66 @@
 [
   {
-    "name": "GraffPunks Live - The Lore",
+    "name": "GraffPUNKS Live",
+    "url": "https://graffpunks.live/",
+    "wiki_page": "GraffPUNKS",
+    "category": "brand"
+  },
+  {
+    "name": "GraffPUNKS Live - The Lore",
     "url": "https://graffpunks.live/the-lore/",
-    "wiki_page": "GraffPunks Lore",
+    "wiki_page": "GraffPUNKS Lore",
     "category": "lore"
   },
   {
-    "name": "GraffPunks Live - GK Factions",
+    "name": "GraffPUNKS Live - GK Factions",
     "url": "https://graffpunks.live/gk-factions/",
     "wiki_page": "GK Factions",
     "category": "factions"
   },
   {
-    "name": "GraffPunks Live - Graffiti Kings NFTs",
+    "name": "GraffPUNKS Live - Graffiti Kings NFTs",
     "url": "https://graffpunks.live/graffiti-kings-nfts/",
     "wiki_page": "Graffiti Kings NFTs",
     "category": "nfts"
   },
   {
-    "name": "GraffPunks Live - Free NFTs",
+    "name": "GraffPUNKS Live - Free NFTs",
     "url": "https://graffpunks.live/free-nfts/",
     "wiki_page": "Free NFTs",
     "category": "nfts"
   },
   {
-    "name": "GraffPunks Live - Graffiti NFTs",
+    "name": "GraffPUNKS Live - Graffiti NFTs",
     "url": "https://graffpunks.live/graffiti-nfts/",
     "wiki_page": "Graffiti NFTs",
     "category": "nfts"
   },
   {
-    "name": "GraffPunks Live - The Vision",
+    "name": "GraffPUNKS Live - The Vision",
     "url": "https://graffpunks.live/the-vision/",
     "wiki_page": "The Vision",
     "category": "vision"
   },
   {
-    "name": "GraffPunks Live - XRP Kids",
+    "name": "GraffPUNKS Live - XRP Kids",
     "url": "https://graffpunks.live/xrp-kids/",
     "wiki_page": "XRP Kids",
     "category": "xrpl"
   },
   {
-    "name": "GraffPunks Substack",
+    "name": "GraffPUNKS Substack",
     "url": "https://graffpunks.substack.com/",
-    "wiki_page": "GraffPunks Substack Updates",
+    "wiki_page": "GraffPUNKS Substack Updates",
     "category": "posts"
   },
   {
-    "name": "GKniftyHEADS Website",
+    "name": "Substack GraffPUNKS Posts",
+    "url": "https://substack.com/@graffpunks/posts",
+    "wiki_page": "GraffPUNKS Substack Updates",
+    "category": "posts"
+  },
+  {
+    "name": "GKniftyHEADS",
     "url": "https://gkniftyheads.com/",
     "wiki_page": "GKniftyHEADS",
     "category": "website"
