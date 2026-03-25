@@ -1,74 +1,56 @@
 [
   {
-    "name": "GraffPUNKS Live",
-    "url": "https://graffpunks.live/",
-    "wiki_page": "GraffPUNKS",
+    "url": "https://gkniftyheads.com",
+    "name": "GK Main Site",
+    "wiki_page": "GKniftyHEADS",
     "category": "brand"
   },
   {
-    "name": "GraffPUNKS Live - The Lore",
-    "url": "https://graffpunks.live/the-lore/",
-    "wiki_page": "GraffPUNKS Lore",
+    "url": "https://graffpunks.substack.com",
+    "name": "GraffPUNKS Substack",
+    "wiki_page": "GraffPUNKS",
     "category": "lore"
   },
   {
-    "name": "GraffPUNKS Live - GK Factions",
-    "url": "https://graffpunks.live/gk-factions/",
-    "wiki_page": "GK Factions",
-    "category": "factions"
+    "url": "https://medium.com/@iamcharliebuster",
+    "name": "Charlie Buster Medium",
+    "wiki_page": "Charlie Buster",
+    "category": "founder"
   },
   {
-    "name": "GraffPUNKS Live - Graffiti Kings NFTs",
-    "url": "https://graffpunks.live/graffiti-kings-nfts/",
-    "wiki_page": "Graffiti Kings NFTs",
-    "category": "nfts"
+    "url": "https://x.com",
+    "name": "X / Twitter Signals",
+    "wiki_page": "GK Network Signals",
+    "category": "signals"
   },
   {
-    "name": "GraffPUNKS Live - Free NFTs",
-    "url": "https://graffpunks.live/free-nfts/",
-    "wiki_page": "Free NFTs",
-    "category": "nfts"
+    "url": "https://atomichub.io",
+    "name": "AtomicHub",
+    "wiki_page": "NFT Drops",
+    "category": "drops"
   },
   {
-    "name": "GraffPUNKS Live - Graffiti NFTs",
-    "url": "https://graffpunks.live/graffiti-nfts/",
-    "wiki_page": "Graffiti NFTs",
-    "category": "nfts"
+    "url": "https://waxonedge.app",
+    "name": "WaxOnEdge",
+    "wiki_page": "Token Activity",
+    "category": "tokens"
   },
   {
-    "name": "GraffPUNKS Live - The Vision",
-    "url": "https://graffpunks.live/the-vision/",
-    "wiki_page": "The Vision",
-    "category": "vision"
+    "url": "https://alcor.exchange",
+    "name": "Alcor Exchange",
+    "wiki_page": "Token Activity",
+    "category": "tokens"
   },
   {
-    "name": "GraffPUNKS Live - XRP Kids",
-    "url": "https://graffpunks.live/xrp-kids/",
-    "wiki_page": "XRP Kids",
+    "url": "https://horizonxrpl.com",
+    "name": "XRPL Horizon",
+    "wiki_page": "XRPL Ecosystem",
     "category": "xrpl"
   },
   {
-    "name": "GraffPUNKS Substack",
-    "url": "https://graffpunks.substack.com/",
-    "wiki_page": "GraffPUNKS Substack Updates",
-    "category": "posts"
-  },
-  {
-    "name": "Substack GraffPUNKS Posts",
-    "url": "https://substack.com/@graffpunks/posts",
-    "wiki_page": "GraffPUNKS Substack Updates",
-    "category": "posts"
-  },
-  {
-    "name": "GKniftyHEADS",
-    "url": "https://gkniftyheads.com/",
-    "wiki_page": "GKniftyHEADS",
-    "category": "website"
-  },
-  {
-    "name": "Graffiti Kings",
-    "url": "https://graffitikings.co.uk/",
-    "wiki_page": "Graffiti Kings",
-    "category": "website"
+    "url": "https://t.me",
+    "name": "Telegram Network",
+    "wiki_page": "GK Telegram Network",
+    "category": "signals"
   }
 ]
