@@ -1,6 +1,5 @@
 import base64
 import os
-import random
 import re
 from datetime import datetime, timezone
 
@@ -10,14 +9,9 @@ from utils import read_json, write_json
 
 IMAGE_STATE_FILE = "image-state.json"
 LATEST_LORE_FILE = "latest-lore.json"
+CHARACTER_MEMORY_FILE = "character-memory.json"
 
 ASSETS_ROOT = "assets"
-
-FOLDER_MAIN_BASE = os.path.join(ASSETS_ROOT, "1-main-base")
-FOLDER_TATTOOS = os.path.join(ASSETS_ROOT, "1a-tattoos-male-only")
-FOLDER_CLOTHING = os.path.join(ASSETS_ROOT, "1b-clothing-reference")
-FOLDER_BONNETS = os.path.join(ASSETS_ROOT, "1c-bonnets")
-FOLDER_EYES = os.path.join(ASSETS_ROOT, "1d-eyes")
 
 OUTPUT_DIR = "output"
 OUTPUT_IMAGE = os.path.join(OUTPUT_DIR, "latest-character-scene.png")
@@ -25,21 +19,6 @@ OUTPUT_IMAGE = os.path.join(OUTPUT_DIR, "latest-character-scene.png")
 
 def now_iso() -> str:
     return datetime.now(timezone.utc).isoformat().replace("+00:00", "Z")
-
-
-def list_files_recursive(root: str) -> list[str]:
-    out = []
-    if not os.path.exists(root):
-        return out
-    for base, _, files in os.walk(root):
-        for f in files:
-            if f.lower().endswith((".png", ".jpg", ".jpeg", ".webp")):
-                out.append(os.path.join(base, f))
-    return sorted(out)
-
-
-def choose_random_file(paths: list[str]) -> str:
-    return random.choice(paths) if paths else ""
 
 
 def infer_gender_from_text(text: str) -> str:
@@ -87,40 +66,87 @@ def extract_character_name(text: str) -> str:
     return "GraffPUNKS Character"
 
 
-def pick_reference_set(gender: str) -> dict:
-    main_base_files = list_files_recursive(FOLDER_MAIN_BASE)
-    tattoo_files = list_files_recursive(FOLDER_TATTOOS)
-    bonnet_files = list_files_recursive(FOLDER_BONNETS)
+def slugify(text: str) -> str:
+    text = (text or "").lower().strip()
+    text = re.sub(r"[^a-z0-9]+", "-", text)
+    return re.sub(r"-+", "-", text).strip("-")
 
-    clothing_root = os.path.join(FOLDER_CLOTHING, gender)
-    clothing_files = list_files_recursive(clothing_root)
 
-    eyes_root = os.path.join(FOLDER_EYES, gender)
-    eyes_files = list_files_recursive(eyes_root)
+def load_latest_lore() -> dict:
+    return read_json(
+        LATEST_LORE_FILE,
+        {
+            "title": "",
+            "part1": "",
+            "part2": "",
+            "notes": "",
+            "generated_at": None,
+        },
+    )
 
-    tattoos = ""
-    if gender == "male":
-        tattoos = choose_random_file(tattoo_files)
+
+def load_character_memory() -> dict:
+    return read_json(
+        CHARACTER_MEMORY_FILE,
+        {
+            "updated_at": None,
+            "characters": {},
+        },
+    )
+
+
+def get_locked_character_traits(lore_text: str) -> dict:
+    memory = load_character_memory()
+    characters = memory.get("characters", {})
+
+    character_name = extract_character_name(lore_text)
+    character_slug = slugify(character_name)
+
+    locked = characters.get(character_slug, {})
+    if locked:
+        return locked
 
     return {
-        "main_base": choose_random_file(main_base_files),
-        "tattoos": tattoos,
-        "clothing": choose_random_file(clothing_files),
-        "bonnet": choose_random_file(bonnet_files),
-        "eyes": choose_random_file(eyes_files),
+        "character_name": character_name,
+        "character_slug": character_slug,
+        "gender": infer_gender_from_text(lore_text),
+        "visual_hash": "",
+        "main_base_ref": "",
+        "bonnet_ref": "",
+        "eyes_ref": "",
+        "tattoos_ref": "",
+        "clothing_ref": "",
+        "traits_locked": False,
     }
 
 
 def build_visual_prompt(lore_part_2: str, lore_part_1: str = "") -> tuple[str, dict]:
     combined = f"{lore_part_1}\n\n{lore_part_2}".strip()
-    gender = infer_gender_from_text(combined)
-    character_name = extract_character_name(combined)
-    refs = pick_reference_set(gender)
+
+    locked = get_locked_character_traits(combined)
+
+    gender = locked.get("gender") or infer_gender_from_text(combined)
+    character_name = locked.get("character_name") or extract_character_name(combined)
+
+    main_base_ref = locked.get("main_base_ref", "")
+    bonnet_ref = locked.get("bonnet_ref", "")
+    eyes_ref = locked.get("eyes_ref", "")
+    tattoos_ref = locked.get("tattoos_ref", "")
+    clothing_ref = locked.get("clothing_ref", "")
+    visual_hash = locked.get("visual_hash", "")
 
     tattoo_rule = (
-        "Use tattoo styling influence from the male tattoo reference only if the character is male. "
-        if gender == "male" and refs["tattoos"]
+        "Use tattoo styling influence from the locked male tattoo reference only if the character is male. "
+        if gender == "male" and tattoos_ref
         else "Do not add male tattoo styling unless the character is male. "
+    )
+
+    trait_lock_rule = (
+        "This character already has locked traits. Reuse the locked main body structure, locked bonnet family, "
+        "locked face/eye language, locked clothing direction, and locked tattoo influence if present. "
+        "Do not drift into a different character design. Keep this as the same recurring person."
+        if locked.get("traits_locked")
+        else "No locked trait identity was found, so create a strong first-pass identity that still follows the house rules."
     )
 
     prompt = f"""
@@ -128,16 +154,20 @@ Create one finished premium character scene image for the current Telegram lore 
 
 HARD CHARACTER RULES:
 - Build the character from a strong main base/body structure influence.
-- Folder 1A tattoos are male-only influence.
-- Folder 1B clothing examples are reference only, never copied exactly.
-- Folder 1C bonnet references are mandatory influence because every lore character must have a unique bonnet/head structure.
-- Folder 1D eye references are style influence only, never copied exactly.
+- Tattoos are male-only influence.
+- Clothing references are direction only, never copied exactly.
+- Every lore character must have a unique bonnet/head structure.
+- Eye references are style influence only, never copied exactly.
 - The final character must feel like part of the same GraffPUNKS / Crypto Moonboys world but still be visually distinct.
-- Do not create a collage, character sheet, moodboard, or multiple characters unless the lore clearly needs it.
 - One finished scene image only.
+- No collage.
+- No sheet layout.
 - No generic AI fantasy look.
 - No copying reference images.
 - References are influence only.
+
+TRAIT LOCK RULE:
+{trait_lock_rule}
 
 STYLE RULES:
 - premium character art
@@ -155,25 +185,36 @@ STYLE RULES:
 CHARACTER:
 - Name focus: {character_name}
 - Gender style: {gender}
+- Locked visual hash: {visual_hash or "none yet"}
 
 CURRENT LORE TO VISUALISE:
 {combined[:5000]}
 
-REFERENCE FILES SELECTED:
-- Main Base: {refs['main_base'] or 'none found'}
-- Tattoos: {refs['tattoos'] or 'none used'}
-- Clothing: {refs['clothing'] or 'none found'}
-- Bonnet: {refs['bonnet'] or 'none found'}
-- Eyes: {refs['eyes'] or 'none found'}
+LOCKED REFERENCE FILES:
+- Main Base: {main_base_ref or "none found"}
+- Tattoos: {tattoos_ref or "none used"}
+- Clothing: {clothing_ref or "none found"}
+- Bonnet: {bonnet_ref or "none found"}
+- Eyes: {eyes_ref or "none found"}
 
 OUTPUT GOAL:
 A single finished scene showing the current lore moment, with the character wearing a unique bonnet, using the house visual language, and looking like a real recurring lore character from the same universe.
+
+DO NOT redesign the character from scratch if locked traits already exist.
 """.strip()
 
     return prompt, {
         "gender": gender,
         "character_name": character_name,
-        "references": refs,
+        "visual_hash": visual_hash,
+        "references": {
+            "main_base": main_base_ref,
+            "tattoos": tattoos_ref,
+            "clothing": clothing_ref,
+            "bonnet": bonnet_ref,
+            "eyes": eyes_ref,
+        },
+        "traits_locked": bool(locked.get("traits_locked")),
     }
 
 
@@ -251,19 +292,6 @@ def generate_image_grok(prompt: str) -> str | None:
     except Exception as exc:
         print(f"[image-arm] Grok image generation failed: {exc}")
         return None
-
-
-def load_latest_lore() -> dict:
-    return read_json(
-        LATEST_LORE_FILE,
-        {
-            "title": "",
-            "part1": "",
-            "part2": "",
-            "notes": "",
-            "generated_at": None,
-        },
-    )
 
 
 def save_image_state(payload: dict) -> None:
