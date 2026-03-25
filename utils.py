@@ -214,4 +214,4 @@ def group_by_page(items: list[dict]) -> dict[str, list[dict]]:
     for item in items:
         page = item.get("wiki_page") or "GK Brain Updates"
         grouped[page].append(item)
-    return dict(grouped))
+    return dict(grouped)
