@@ -49,10 +49,12 @@ def normalize_export(raw: dict, sources: list[dict]) -> dict:
             "source_name": item.get("source_name") or matched.get("name") or "Main Brain",
             "wiki_page": item.get("wiki_page") or matched.get("wiki_page") or "GK Brain Updates",
             "category": item.get("category") or matched.get("category") or "general",
+            "mention_count": item.get("mention_count", 0),  # ✅ FIXED
             "published_at": item.get("published_at"),
             "updated_at": item.get("updated_at"),
             "detected_at": now_iso(),
         }
+
         out.append(clean)
 
     return {"generated_at": now_iso(), "items": dedupe_items(out)}
@@ -60,6 +62,7 @@ def normalize_export(raw: dict, sources: list[dict]) -> dict:
 
 def merge_state(state: dict, export: dict) -> dict:
     existing = {i["id"]: i for i in state.get("items", [])}
+
     for item in export.get("items", []):
         if item["id"] not in existing:
             existing[item["id"]] = {
@@ -76,20 +79,25 @@ def merge_state(state: dict, export: dict) -> dict:
 
 
 def main() -> None:
-    state = read_json(STATE_FILE, {
-        "last_ingest_at": None,
-        "last_telegram_post_at": None,
-        "last_fandom_update_at": None,
-        "items": [],
-        "posted_to_telegram_ids": [],
-        "posted_to_fandom_ids": []
-    })
+    state = read_json(
+        STATE_FILE,
+        {
+            "last_ingest_at": None,
+            "last_telegram_post_at": None,
+            "last_fandom_update_at": None,
+            "items": [],
+            "posted_to_telegram_ids": [],
+            "posted_to_fandom_ids": [],
+        },
+    )
+
     sources = read_json(SOURCES_FILE, [])
 
     raw = fetch_main_brain_export()
     export = normalize_export(raw, sources)
 
     write_json(EXPORT_FILE, export)
+
     state = merge_state(state, export)
     write_json(STATE_FILE, state)
 
