@@ -40,7 +40,7 @@ jobs:
           MAIN_BRAIN_EXPORT_URL: ${{ secrets.MAIN_BRAIN_EXPORT_URL }}
 
       # -----------------------------
-      # 2. GENERATE LORE (NO POST)
+      # 2. GENERATE LORE (NO POST YET)
       # -----------------------------
       - name: Generate Lore
         run: python telegram-arm.py
@@ -52,7 +52,13 @@ jobs:
           CHANNEL_CHAT_IDS: ""
 
       # -----------------------------
-      # 3. GENERATE IMAGE
+      # 3. LOCK CHARACTER TRAITS
+      # -----------------------------
+      - name: Lock Character Traits
+        run: python character-traits.py
+
+      # -----------------------------
+      # 4. GENERATE CHARACTER IMAGE
       # -----------------------------
       - name: Generate Character Image
         run: python image-arm.py
@@ -61,13 +67,13 @@ jobs:
           GROK_API_KEY: ${{ secrets.GROK_API_KEY }}
 
       # -----------------------------
-      # 4. CHARACTER MEMORY UPDATE
+      # 5. UPDATE CHARACTER MEMORY
       # -----------------------------
       - name: Update Character Memory
         run: python character-memory.py
 
       # -----------------------------
-      # 5. FINAL TELEGRAM POST
+      # 6. FINAL TELEGRAM POST
       # -----------------------------
       - name: Send Telegram Post
         run: python telegram-arm.py
@@ -79,7 +85,7 @@ jobs:
           CHANNEL_CHAT_IDS: ${{ secrets.CHANNEL_CHAT_IDS }}
 
       # -----------------------------
-      # 6. UPDATE FANDOM
+      # 7. UPDATE FANDOM
       # -----------------------------
       - name: Update Fandom Wiki
         run: python fandom-arm.py
@@ -89,14 +95,20 @@ jobs:
           FANDOM_BOT_PASSWORD: ${{ secrets.FANDOM_BOT_PASSWORD }}
 
       # -----------------------------
-      # 7. COMMIT STATE
+      # 8. COMMIT STATE
       # -----------------------------
       - name: Commit state + outputs
         run: |
           git config user.name "GK Bot"
           git config user.email "gk-bot@users.noreply.github.com"
 
-          git add bot-state.json main-brain-export.json latest-lore.json image-state.json character-memory.json output/
+          git add \
+            bot-state.json \
+            main-brain-export.json \
+            latest-lore.json \
+            image-state.json \
+            character-memory.json \
+            output/
 
-          git diff --cached --quiet || git commit -m "bot: update state + lore + character memory [skip ci]"
+          git diff --cached --quiet || git commit -m "bot: update state + lore + image + memory [skip ci]"
           git push
