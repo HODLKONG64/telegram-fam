@@ -1,4 +1,3 @@
-import json
 import os
 import re
 from datetime import datetime, timezone
@@ -7,7 +6,7 @@ import requests
 from anthropic import Anthropic
 from openai import OpenAI
 
-from utils import now_iso, read_json, read_text, short_history_append, telegram_send_message, write_json
+from utils import now_iso, read_json, read_text, short_history_append, write_json
 
 STATE_FILE = "bot-state.json"
 EXPORT_FILE = "main-brain-export.json"
@@ -16,6 +15,8 @@ STORY_BIBLE_FILE = "story-bible.md"
 CHARACTER_BIBLE_FILE = "character-bible.md"
 LORE_PLANNER_FILE = "lore-planner.md"
 LORE_CONFIG_FILE = "lore-config.json"
+LATEST_LORE_FILE = "latest-lore.json"
+IMAGE_STATE_FILE = "image-state.json"
 
 
 def load_config() -> dict:
@@ -186,6 +187,14 @@ HARD RULES:
 - Tone: cinematic, raw, urgent, rebellious, mythic, streetwise.
 - No hashtags.
 - No markdown tables.
+- This output is for two Telegram messages sent back-to-back.
+- Message 1 is text only.
+- Message 2 continues the lore and is paired with an image.
+
+TELEGRAM LENGTH RULES:
+- PART 1 must fit under 3800 characters.
+- PART 2 must fit under 900 characters.
+- PART 2 must feel like a continuation, not a restart.
 
 TIME BLOCK:
 - Date: {block['date']}
@@ -216,10 +225,10 @@ FRESH VERIFIED UPDATES:
 
 OUTPUT FORMAT:
 PART 1:
-[main post, around 2200-3200 characters, strong continuation]
+[main post, under 3800 chars]
 
 PART 2:
-[shorter follow-up, around 500-1000 characters, punchy closer]
+[continuation post, under 900 chars]
 
 LORE NOTES:
 [2-6 short bullet notes explaining which updates were woven in and how subtly]
@@ -276,7 +285,11 @@ def llm_generate(prompt: str) -> str:
 
 def parse_sections(text: str) -> tuple[str, str, str]:
     def grab(label: str, end_labels: list[str]) -> str:
-        pattern = rf"{re.escape(label)}\s*:\s*(.*?)(?=\n(?:{'|'.join(re.escape(x) for x in end_labels)})\s*:|$)"
+        joined = "|".join(re.escape(x) for x in end_labels)
+        if joined:
+            pattern = rf"{re.escape(label)}\s*:\s*(.*?)(?=\n(?:{joined})\s*:|$)"
+        else:
+            pattern = rf"{re.escape(label)}\s*:\s*(.*)$"
         m = re.search(pattern, text, re.DOTALL | re.IGNORECASE)
         return m.group(1).strip() if m else ""
 
@@ -289,7 +302,7 @@ def parse_sections(text: str) -> tuple[str, str, str]:
         part2 = text[3200:4000].strip() or "The network keeps moving."
         notes = "- Fallback parse used."
 
-    return part1[:3800], part2[:1200], notes[:2000]
+    return part1[:3800], part2[:900], notes[:2000]
 
 
 def build_title() -> str:
@@ -297,7 +310,54 @@ def build_title() -> str:
     return f"GK Network Log Entry — {stamp}"
 
 
-def post_to_telegram(title: str, part1: str, part2: str) -> None:
+def save_latest_lore(title: str, part1: str, part2: str, notes: str, used_items: list[dict]) -> None:
+    payload = {
+        "title": title,
+        "part1": part1,
+        "part2": part2,
+        "notes": notes,
+        "generated_at": now_iso(),
+        "used_item_ids": [i["id"] for i in used_items],
+        "used_item_titles": [i.get("title", "") for i in used_items],
+    }
+    write_json(LATEST_LORE_FILE, payload)
+
+
+def load_image_state() -> dict:
+    return read_json(
+        IMAGE_STATE_FILE,
+        {
+            "generated_at": None,
+            "image_path": None,
+            "prompt": "",
+            "meta": {},
+        },
+    )
+
+
+def telegram_send_text(bot_token: str, chat_id: str, text: str) -> dict:
+    resp = requests.post(
+        f"https://api.telegram.org/bot{bot_token}/sendMessage",
+        json={"chat_id": chat_id, "text": text[:4096]},
+        timeout=30,
+    )
+    resp.raise_for_status()
+    return resp.json()
+
+
+def telegram_send_photo(bot_token: str, chat_id: str, image_path: str, caption: str) -> dict:
+    with open(image_path, "rb") as fh:
+        resp = requests.post(
+            f"https://api.telegram.org/bot{bot_token}/sendPhoto",
+            data={"chat_id": chat_id, "caption": caption[:1024]},
+            files={"photo": fh},
+            timeout=60,
+        )
+    resp.raise_for_status()
+    return resp.json()
+
+
+def post_to_telegram(title: str, part1: str, part2: str, image_path: str | None) -> None:
     token = os.environ.get("TELEGRAM_BOT_TOKEN", "").strip()
     chat_ids = [c.strip() for c in os.environ.get("CHANNEL_CHAT_IDS", "").split(",") if c.strip()]
 
@@ -306,14 +366,22 @@ def post_to_telegram(title: str, part1: str, part2: str) -> None:
 
     if token and chat_ids:
         for chat_id in chat_ids:
-            telegram_send_message(token, chat_id, msg1)
-            telegram_send_message(token, chat_id, msg2)
-            print(f"[telegram] sent to {chat_id}")
+            telegram_send_text(token, chat_id, msg1)
+            if image_path and os.path.exists(image_path):
+                telegram_send_photo(token, chat_id, image_path, msg2)
+                print(f"[telegram] sent text + image to {chat_id}")
+            else:
+                telegram_send_text(token, chat_id, msg2)
+                print(f"[telegram] sent text-only fallback to {chat_id}")
     else:
         print("[telegram] missing config, output below")
+        print("=== MESSAGE 1 ===")
         print(msg1)
         print()
+        print("=== MESSAGE 2 ===")
         print(msg2)
+        if image_path:
+            print(f"[telegram] image path: {image_path}")
 
 
 def mark_items_done(state: dict, used_items: list[dict]) -> dict:
@@ -362,7 +430,14 @@ def main() -> None:
     part1, part2, notes = parse_sections(raw)
     title = build_title()
 
-    post_to_telegram(title, part1, part2)
+    save_latest_lore(title, part1, part2, notes, fresh_items)
+
+    image_state = load_image_state()
+    image_path = image_state.get("image_path")
+    if image_path and not os.path.exists(image_path):
+        image_path = None
+
+    post_to_telegram(title, part1, part2, image_path)
     append_lore_history(title, part1, part2, notes)
 
     state = mark_items_done(state, fresh_items)
