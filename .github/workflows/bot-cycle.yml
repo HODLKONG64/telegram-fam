@@ -3,7 +3,7 @@ name: GK Telegram + Fandom Bot
 on:
   workflow_dispatch:
   schedule:
-    - cron: "0 */2 * * *"  # every 2 hours
+    - cron: "0 */2 * * *"
 
 concurrency:
   group: gk-telegram-fandom
@@ -32,7 +32,7 @@ jobs:
           pip install --no-cache-dir -r requirements.txt
 
       # -----------------------------
-      # STEP 1 — INGEST MAIN BRAIN
+      # 1. INGEST MAIN BRAIN
       # -----------------------------
       - name: Ingest Main Brain Export
         run: python ingest-brain.py
@@ -40,19 +40,19 @@ jobs:
           MAIN_BRAIN_EXPORT_URL: ${{ secrets.MAIN_BRAIN_EXPORT_URL }}
 
       # -----------------------------
-      # STEP 2 — GENERATE LORE (TEXT ONLY)
+      # 2. GENERATE LORE (NO POST)
       # -----------------------------
-      - name: Generate Lore (save latest-lore.json)
+      - name: Generate Lore
         run: python telegram-arm.py
         env:
           ANTHROPIC_API_KEY: ${{ secrets.ANTHROPIC_API_KEY }}
           GROK_API_KEY: ${{ secrets.GROK_API_KEY }}
           OPENAI_API_KEY: ${{ secrets.OPENAI_API_KEY }}
-          TELEGRAM_BOT_TOKEN: ""   # ❌ disabled here (no posting yet)
+          TELEGRAM_BOT_TOKEN: ""
           CHANNEL_CHAT_IDS: ""
 
       # -----------------------------
-      # STEP 3 — GENERATE IMAGE FROM LORE
+      # 3. GENERATE IMAGE
       # -----------------------------
       - name: Generate Character Image
         run: python image-arm.py
@@ -61,7 +61,13 @@ jobs:
           GROK_API_KEY: ${{ secrets.GROK_API_KEY }}
 
       # -----------------------------
-      # STEP 4 — FINAL TELEGRAM POST (TEXT + IMAGE)
+      # 4. CHARACTER MEMORY UPDATE
+      # -----------------------------
+      - name: Update Character Memory
+        run: python character-memory.py
+
+      # -----------------------------
+      # 5. FINAL TELEGRAM POST
       # -----------------------------
       - name: Send Telegram Post
         run: python telegram-arm.py
@@ -73,7 +79,7 @@ jobs:
           CHANNEL_CHAT_IDS: ${{ secrets.CHANNEL_CHAT_IDS }}
 
       # -----------------------------
-      # STEP 5 — UPDATE FANDOM
+      # 6. UPDATE FANDOM
       # -----------------------------
       - name: Update Fandom Wiki
         run: python fandom-arm.py
@@ -83,14 +89,14 @@ jobs:
           FANDOM_BOT_PASSWORD: ${{ secrets.FANDOM_BOT_PASSWORD }}
 
       # -----------------------------
-      # STEP 6 — COMMIT STATE FILES
+      # 7. COMMIT STATE
       # -----------------------------
       - name: Commit state + outputs
         run: |
           git config user.name "GK Bot"
           git config user.email "gk-bot@users.noreply.github.com"
 
-          git add bot-state.json main-brain-export.json latest-lore.json image-state.json output/
+          git add bot-state.json main-brain-export.json latest-lore.json image-state.json character-memory.json output/
 
-          git diff --cached --quiet || git commit -m "bot: update state + lore + image [skip ci]"
+          git diff --cached --quiet || git commit -m "bot: update state + lore + character memory [skip ci]"
           git push
