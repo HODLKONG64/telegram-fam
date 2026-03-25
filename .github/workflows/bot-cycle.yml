@@ -1,0 +1,59 @@
+name: GK Telegram + Fandom Bot
+
+on:
+  workflow_dispatch:
+  schedule:
+    - cron: "15 */2 * * *"
+
+permissions:
+  contents: write
+
+concurrency:
+  group: gk-telegram-fandom-bot
+  cancel-in-progress: false
+
+jobs:
+  run-bot:
+    runs-on: ubuntu-latest
+    timeout-minutes: 25
+
+    env:
+      MAIN_BRAIN_EXPORT_URL: ${{ secrets.MAIN_BRAIN_EXPORT_URL }}
+      TELEGRAM_BOT_TOKEN: ${{ secrets.TELEGRAM_BOT_TOKEN }}
+      CHANNEL_CHAT_IDS: ${{ secrets.CHANNEL_CHAT_IDS }}
+      ANTHROPIC_API_KEY: ${{ secrets.ANTHROPIC_API_KEY }}
+      GROK_API_KEY: ${{ secrets.GROK_API_KEY }}
+      OPENAI_API_KEY: ${{ secrets.OPENAI_API_KEY }}
+      FANDOM_BOT_USER: ${{ secrets.FANDOM_BOT_USER }}
+      FANDOM_BOT_PASSWORD: ${{ secrets.FANDOM_BOT_PASSWORD }}
+      FANDOM_WIKI_URL: ${{ secrets.FANDOM_WIKI_URL }}
+
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v4
+
+      - name: Setup Python
+        uses: actions/setup-python@v5
+        with:
+          python-version: "3.12"
+          cache: "pip"
+
+      - name: Install dependencies
+        run: pip install -r requirements.txt
+
+      - name: Ingest main brain export
+        run: python ingest-brain.py
+
+      - name: Telegram arm
+        run: python telegram-arm.py
+
+      - name: Fandom arm
+        run: python fandom-arm.py
+
+      - name: Commit state
+        run: |
+          git config user.name "GK Telegram Fandom Bot"
+          git config user.email "gk-telegram-fandom-bot@users.noreply.github.com"
+          git add bot-state.json main-brain-export.json lore-history.md
+          git diff --cached --quiet || git commit -m "chore: bot state update [skip ci]"
+          git push
