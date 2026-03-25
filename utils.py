@@ -155,6 +155,7 @@ def append_under_latest_updates(text: str, block: str) -> str:
 def build_recovery_page(page_title: str, items: list[dict]) -> str:
     overview_parts = []
     sources = []
+
     for item in items[:5]:
         title = item.get("title") or "Update"
         summary = normalize_text(item.get("summary") or item.get("description") or "")
