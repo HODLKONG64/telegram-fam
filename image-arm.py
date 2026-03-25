@@ -1,4 +1,4 @@
-import json
+import base64
 import os
 import random
 import re
@@ -6,12 +6,10 @@ from datetime import datetime, timezone
 
 import requests
 
-from utils import read_json, read_text, write_json
+from utils import read_json, write_json
 
-STATE_FILE = "bot-state.json"
 IMAGE_STATE_FILE = "image-state.json"
 LATEST_LORE_FILE = "latest-lore.json"
-CHARACTER_RULES_FILE = "character-image-rules.json"
 
 ASSETS_ROOT = "assets"
 
@@ -40,6 +38,10 @@ def list_files_recursive(root: str) -> list[str]:
     return sorted(out)
 
 
+def choose_random_file(paths: list[str]) -> str:
+    return random.choice(paths) if paths else ""
+
+
 def infer_gender_from_text(text: str) -> str:
     lower = " " + text.lower().replace("-", " ") + " "
     female_hits = 0
@@ -48,17 +50,18 @@ def infer_gender_from_text(text: str) -> str:
     female_terms = [
         " she ", " her ", " hers ", " herself ",
         " lady ", " queen ", " princess ", " female ",
-        " jodie ", " lady ink ", " moongirl "
+        " jodie ", " lady ink ", " moongirl ",
     ]
     male_terms = [
         " he ", " his ", " himself ",
         " male ", " boy ", " bloke ",
-        " charlie ", " alfie "
+        " charlie ", " alfie ",
     ]
 
     for term in female_terms:
         if term in lower:
             female_hits += 1
+
     for term in male_terms:
         if term in lower:
             male_hits += 1
@@ -78,37 +81,33 @@ def extract_character_name(text: str) -> str:
         "Moonboy",
     ]
     lower = text.lower()
-    for c in candidates:
-        if c.lower() in lower:
-            return c
+    for candidate in candidates:
+        if candidate.lower() in lower:
+            return candidate
     return "GraffPUNKS Character"
 
 
 def pick_reference_set(gender: str) -> dict:
-    main_base = random.choice(list_files_recursive(FOLDER_MAIN_BASE)) if list_files_recursive(FOLDER_MAIN_BASE) else ""
-
-    tattoos = ""
-    if gender == "male":
-        tattoo_files = list_files_recursive(FOLDER_TATTOOS)
-        tattoos = random.choice(tattoo_files) if tattoo_files else ""
+    main_base_files = list_files_recursive(FOLDER_MAIN_BASE)
+    tattoo_files = list_files_recursive(FOLDER_TATTOOS)
+    bonnet_files = list_files_recursive(FOLDER_BONNETS)
 
     clothing_root = os.path.join(FOLDER_CLOTHING, gender)
     clothing_files = list_files_recursive(clothing_root)
-    clothing = random.choice(clothing_files) if clothing_files else ""
-
-    bonnet_files = list_files_recursive(FOLDER_BONNETS)
-    bonnet = random.choice(bonnet_files) if bonnet_files else ""
 
     eyes_root = os.path.join(FOLDER_EYES, gender)
     eyes_files = list_files_recursive(eyes_root)
-    eyes = random.choice(eyes_files) if eyes_files else ""
+
+    tattoos = ""
+    if gender == "male":
+        tattoos = choose_random_file(tattoo_files)
 
     return {
-        "main_base": main_base,
+        "main_base": choose_random_file(main_base_files),
         "tattoos": tattoos,
-        "clothing": clothing,
-        "bonnet": bonnet,
-        "eyes": eyes,
+        "clothing": choose_random_file(clothing_files),
+        "bonnet": choose_random_file(bonnet_files),
+        "eyes": choose_random_file(eyes_files),
     }
 
 
@@ -119,45 +118,37 @@ def build_visual_prompt(lore_part_2: str, lore_part_1: str = "") -> tuple[str, d
     refs = pick_reference_set(gender)
 
     tattoo_rule = (
-        "Include tattoo energy and placement influence from the tattoo references, only if the character is male. "
-        if gender == "male" and refs["tattoos"] else
-        "Do not add male tattoo styling unless clearly appropriate. "
+        "Use tattoo styling influence from the male tattoo reference only if the character is male. "
+        if gender == "male" and refs["tattoos"]
+        else "Do not add male tattoo styling unless the character is male. "
     )
 
     prompt = f"""
-Create one single character scene image for the current Telegram lore continuation.
+Create one finished premium character scene image for the current Telegram lore continuation.
 
 HARD CHARACTER RULES:
-- The character must be built from a strong central body/base structure reference.
-- Clothing references are for inspiration only, never copied exactly.
-- Eye references are for style language only, never copied exactly.
-- Every lore character must have a unique bonnet/head structure.
-- The bonnet is mandatory and must feel signature, iconic, and unique.
-- The face style must follow the visual language of the reference eye folders.
-- The body should feel consistent with the base/body structure reference.
-- This is a GraffPUNKS / Crypto Moonboys universe character, not generic AI art.
-- Keep the design coherent, premium, dark, stylish, cinematic, graffiti-cyberpunk.
-- No collage look. No sheet layout. One finished scene image only.
+- Build the character from a strong main base/body structure influence.
+- Folder 1A tattoos are male-only influence.
+- Folder 1B clothing examples are reference only, never copied exactly.
+- Folder 1C bonnet references are mandatory influence because every lore character must have a unique bonnet/head structure.
+- Folder 1D eye references are style influence only, never copied exactly.
+- The final character must feel like part of the same GraffPUNKS / Crypto Moonboys world but still be visually distinct.
+- Do not create a collage, character sheet, moodboard, or multiple characters unless the lore clearly needs it.
+- One finished scene image only.
+- No generic AI fantasy look.
+- No copying reference images.
+- References are influence only.
 
 STYLE RULES:
-- gritty
-- cinematic
 - premium character art
-- rebellious street energy
-- dystopian urban atmosphere
-- London / underground / signal-network mood
-- strong character silhouette
-- highly readable face and bonnet
-- detailed textures
-- dramatic lighting
-- visually collectible
-
-REFERENCE USAGE RULES:
-- main base reference = structural influence
-- tattoos reference = male-only influence
-- clothing references = direction only, never copied
-- bonnet references = must drive uniqueness
-- eye references = face-style influence only, never copied
+- dark stylish graffiti-cyberpunk energy
+- dystopian London / underground / signal-network mood
+- cinematic lighting
+- gritty textures
+- highly readable face
+- strong bonnet silhouette
+- collectible visual identity
+- detailed but clean
 
 {tattoo_rule}
 
@@ -176,7 +167,7 @@ REFERENCE FILES SELECTED:
 - Eyes: {refs['eyes'] or 'none found'}
 
 OUTPUT GOAL:
-A finished character scene showing the current lore moment, with the character wearing a unique bonnet, using your house visual language, and looking like part of the same world as every other character while still being distinct.
+A single finished scene showing the current lore moment, with the character wearing a unique bonnet, using the house visual language, and looking like a real recurring lore character from the same universe.
 """.strip()
 
     return prompt, {
@@ -199,7 +190,7 @@ def generate_image_openai(prompt: str) -> str | None:
     payload = {
         "model": "gpt-image-1",
         "prompt": prompt,
-        "size": "1024x1024"
+        "size": "1024x1024",
     }
 
     try:
@@ -214,7 +205,6 @@ def generate_image_openai(prompt: str) -> str | None:
         image_b64 = data["data"][0]["b64_json"]
 
         os.makedirs(OUTPUT_DIR, exist_ok=True)
-        import base64
         image_bytes = base64.b64decode(image_b64)
         with open(OUTPUT_IMAGE, "wb") as fh:
             fh.write(image_bytes)
@@ -289,7 +279,10 @@ def main() -> None:
         print("[image-arm] No latest lore found.")
         return
 
-    prompt, meta = build_visual_prompt(lore_part_2=lore_part_2, lore_part_1=lore_part_1)
+    prompt, meta = build_visual_prompt(
+        lore_part_2=lore_part_2,
+        lore_part_1=lore_part_1,
+    )
 
     image_path = generate_image_openai(prompt)
     if image_path is None:
