@@ -19,7 +19,7 @@ R2_SECRET_KEY = os.environ.get("R2_SECRET_ACCESS_KEY")
 
 
 def _r2_enabled() -> bool:
-    return all([R2_ENDPOINT, R2_ACCESS_KEY, R2_SECRET_KEY, R2_BUCKET])
+    return all([R2_ENDPOINT, R2_ACCESS_KEY, R2_SECRET_KEY, R2_BUCKET, R2_KEY])
 
 
 def _r2_client():
@@ -110,9 +110,6 @@ def dedupe_items(items: list[dict]) -> list[dict]:
     return out
 
 
-# -----------------------------
-# SHARED SAM MEMORY (R2 FIRST)
-# -----------------------------
 def _empty_memory() -> dict:
     return {
         "last_update": "",
@@ -124,10 +121,12 @@ def _empty_memory() -> dict:
             "armies": {},
             "lore_locations": {},
             "mechanics": {},
+            "mechanics_games": {},
             "tokens": {},
             "games": {},
             "events": {},
             "brands": {},
+            "brands_collections": {},
         },
         "external_facts": {
             "CONFIRMED": {},
@@ -139,8 +138,19 @@ def _empty_memory() -> dict:
             "WEB_UNVERIFIED": {},
         },
         "keyword_bank": {},
+        "crawl_snapshots": {},
         "bibles": {},
         "latest_focus_plan": {},
+        "crawl_schedule": {},
+        "spam_list": {
+            "domains": [],
+            "words": ["darren - scam", "darren scam", " rug ", "scam"],
+        },
+        "error_ledger": {
+            "unsolved": [],
+            "solved": [],
+            "gigga_x_learnings": [],
+        },
         "delivery": {
             "telegram": {
                 "posted_ids": [],
@@ -155,6 +165,16 @@ def _empty_memory() -> dict:
     }
 
 
+def _deep_merge_defaults(target: dict, defaults: dict) -> dict:
+    for key, value in defaults.items():
+        if key not in target:
+            target[key] = value
+            continue
+        if isinstance(value, dict) and isinstance(target.get(key), dict):
+            _deep_merge_defaults(target[key], value)
+    return target
+
+
 def load_memory() -> dict:
     empty = _empty_memory()
 
@@ -163,18 +183,7 @@ def load_memory() -> dict:
             client = _r2_client()
             obj = client.get_object(Bucket=R2_BUCKET, Key=R2_KEY)
             memory = json.loads(obj["Body"].read().decode("utf-8"))
-            for key, val in empty.items():
-                if key not in memory:
-                    memory[key] = val
-                elif isinstance(val, dict):
-                    for sub_key, sub_val in val.items():
-                        if sub_key not in memory[key]:
-                            memory[key][sub_key] = sub_val
-                        elif isinstance(sub_val, dict):
-                            for sub_sub_key, sub_sub_val in sub_val.items():
-                                if sub_sub_key not in memory[key][sub_key]:
-                                    memory[key][sub_key][sub_sub_key] = sub_sub_val
-            return memory
+            return _deep_merge_defaults(memory, empty)
         except Exception as exc:
             print(f"[utils] R2 load failed: {exc}")
 
@@ -182,10 +191,7 @@ def load_memory() -> dict:
         try:
             with open("sam-memory.json", "r", encoding="utf-8") as fh:
                 memory = json.load(fh)
-            for key, val in empty.items():
-                if key not in memory:
-                    memory[key] = val
-            return memory
+            return _deep_merge_defaults(memory, empty)
         except Exception:
             pass
 
@@ -193,6 +199,7 @@ def load_memory() -> dict:
 
 
 def save_memory(memory: dict) -> None:
+    memory = _deep_merge_defaults(memory, _empty_memory())
     payload = json.dumps(memory, indent=2, ensure_ascii=False).encode("utf-8")
 
     if _r2_enabled():
@@ -214,16 +221,22 @@ def save_memory(memory: dict) -> None:
 def get_delivery_state(memory: dict, channel: str) -> dict:
     delivery = memory.setdefault("delivery", {})
     if channel == "telegram":
-        return delivery.setdefault("telegram", {
-            "posted_ids": [],
-            "last_post_at": None,
-            "latest_lore": {},
-        })
+        return delivery.setdefault(
+            "telegram",
+            {
+                "posted_ids": [],
+                "last_post_at": None,
+                "latest_lore": {},
+            },
+        )
     if channel == "fandom":
-        return delivery.setdefault("fandom", {
-            "posted_ids": [],
-            "last_post_at": None,
-        })
+        return delivery.setdefault(
+            "fandom",
+            {
+                "posted_ids": [],
+                "last_post_at": None,
+            },
+        )
     return delivery.setdefault(channel, {})
 
 
@@ -234,7 +247,7 @@ def is_delivered(memory: dict, channel: str, item_id: str) -> bool:
 
 def mark_delivered(memory: dict, channel: str, item_ids: list[str]) -> dict:
     state = get_delivery_state(memory, channel)
-    merged = list(set(state.get("posted_ids", []) + list(item_ids)))
+    merged = list(dict.fromkeys(state.get("posted_ids", []) + list(item_ids)))
     state["posted_ids"] = merged[-8000:]
     state["last_post_at"] = now_iso()
     return memory
@@ -266,9 +279,6 @@ def get_latest_lore_from_memory(memory: dict) -> dict:
     return state.get("latest_lore", {}) or {}
 
 
-# -----------------------------
-# EXISTING FANDOM / TELEGRAM HELPERS
-# -----------------------------
 def fandom_connect():
     wiki_url = os.environ.get("FANDOM_WIKI_URL", "").strip()
     user = os.environ.get("FANDOM_BOT_USER", "").strip()
