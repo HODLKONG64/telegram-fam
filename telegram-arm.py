@@ -36,7 +36,7 @@ def _build_item(category: str, name: str, data: dict) -> dict:
         data.get("lore_details")
         or data.get("role_description")
         or (facts[0] if facts else "")
-        or f"{name} is active inside the SAM memory graph."
+        or f"{name} is active in the Crypto Moonboys wiki."
     )
 
     return {
@@ -91,9 +91,9 @@ def pick_items(memory: dict, limit: int = 3) -> list[dict]:
 
 def compose_lore(items: list[dict]) -> tuple[str, str, str, str]:
     if not items:
-        title = "SAM Memory Pulse"
-        part1 = "The shared SAM memory is live, but no fresh entity slice was available for Telegram this cycle."
-        part2 = "The delivery layer is now wired to the real entity graph instead of the old export pipeline."
+        title = "MOONBOYS SIGNAL"
+        part1 = "The Crypto Moonboys wiki memory is live, but no fresh entity slice was available this cycle."
+        part2 = "Check back next cycle — the knowledge graph is building."
         notes = "No entity items were available."
         return title, part1, part2, notes
 
@@ -106,7 +106,7 @@ def compose_lore(items: list[dict]) -> tuple[str, str, str, str]:
 
     for item in items:
         intro_lines.append(
-            f"{item['title']} is active in the shared SAM memory under {item['category'].replace('_', ' ')}."
+            f"{item['title']} is part of the Crypto Moonboys wiki under {item['category'].replace('_', ' ')}."
         )
 
         block = item["summary"]
@@ -143,6 +143,17 @@ def save_latest_lore_file(title: str, part1: str, part2: str, notes: str) -> Non
 
 def generate_mode() -> None:
     memory = load_memory()
+
+    # Guard: if memory is empty (reset state), skip generation entirely.
+    # Do not post stale fallback lore when the brain has been wiped.
+    facts = memory.get("facts", {})
+    entity_count = sum(
+        len(v) for v in facts.values() if isinstance(v, dict)
+    )
+    if entity_count == 0:
+        print("[telegram-arm] shared memory is empty (reset state) — skipping generation")
+        return
+
     used_items = pick_items(memory, limit=3)
     title, part1, part2, notes = compose_lore(used_items)
 
@@ -155,7 +166,7 @@ def generate_mode() -> None:
 
 
 def build_send_text(latest: dict) -> str:
-    title = (latest.get("title") or "SAM SIGNAL").strip()
+    title = (latest.get("title") or "MOONBOYS SIGNAL").strip()
     part1 = (latest.get("part1") or "").strip()
     part2 = (latest.get("part2") or "").strip()
 
