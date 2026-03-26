@@ -1,191 +1,401 @@
+import json
 import os
 import re
-import argparse
+from collections import defaultdict
 from datetime import datetime, timezone
+from urllib.parse import urlparse
 
+import boto3
+from botocore.config import Config
+import mwclient
 import requests
-from anthropic import Anthropic
-from openai import OpenAI
-
-from utils import now_iso, read_json, read_text, short_history_append, write_json
-
-STATE_FILE = "bot-state.json"
-EXPORT_FILE = "main-brain-export.json"
-HISTORY_FILE = "lore-history.md"
-STORY_BIBLE_FILE = "story-bible.md"
-CHARACTER_BIBLE_FILE = "character-bible.md"
-LORE_PLANNER_FILE = "lore-planner.md"
-LORE_CONFIG_FILE = "lore-config.json"
-LATEST_LORE_FILE = "latest-lore.json"
-IMAGE_STATE_FILE = "image-state.json"
 
 
-def load_config() -> dict:
-    return read_json(
-        LORE_CONFIG_FILE,
-        {
-            "update_blend_min": 0.05,
-            "update_blend_max": 0.10,
-            "brain_signal_max": 0.20,
-            "history_chars": 12000,
-            "story_first": True,
-            "batch_size": 5,
-        },
+R2_BUCKET = os.environ.get("R2_BUCKET", "sam-memory")
+R2_KEY = os.environ.get("R2_KEY", "sam-memory.json")
+R2_ENDPOINT = (os.environ.get("R2_ENDPOINT_URL") or "").strip().rstrip("/") or None
+R2_ACCESS_KEY = os.environ.get("R2_ACCESS_KEY_ID")
+R2_SECRET_KEY = os.environ.get("R2_SECRET_ACCESS_KEY")
+
+
+def _r2_enabled() -> bool:
+    return all([R2_ENDPOINT, R2_ACCESS_KEY, R2_SECRET_KEY, R2_BUCKET])
+
+
+def _r2_client():
+    return boto3.client(
+        "s3",
+        endpoint_url=R2_ENDPOINT,
+        aws_access_key_id=R2_ACCESS_KEY,
+        aws_secret_access_key=R2_SECRET_KEY,
+        config=Config(signature_version="s3v4"),
+        region_name="auto",
     )
 
 
-def load_story_bible() -> str:
-    return read_text(STORY_BIBLE_FILE, "").strip()
+def now_iso() -> str:
+    return datetime.now(timezone.utc).isoformat().replace("+00:00", "Z")
 
 
-def load_character_bible() -> str:
-    return read_text(CHARACTER_BIBLE_FILE, "").strip()
+def today_utc() -> str:
+    return datetime.now(timezone.utc).strftime("%Y-%m-%d")
 
 
-def load_lore_planner() -> str:
-    return read_text(LORE_PLANNER_FILE, "").strip()
+def read_json(path: str, default):
+    if not os.path.exists(path):
+        return default
+    try:
+        with open(path, "r", encoding="utf-8") as fh:
+            return json.load(fh)
+    except Exception:
+        return default
 
 
-def load_lore_history(history_chars: int) -> str:
-    raw = read_text(HISTORY_FILE, "").strip()
-    if not raw:
-        return "(No previous lore yet.)"
-    return raw[-history_chars:]
+def write_json(path: str, data) -> None:
+    with open(path, "w", encoding="utf-8") as fh:
+        json.dump(data, fh, indent=2, ensure_ascii=False)
 
 
-def choose_fresh_items(state: dict, batch_size: int) -> list[dict]:
-    items = state.get("items", [])
-    fresh = [i for i in items if not i.get("telegram_done")]
-    fresh.sort(
-        key=lambda x: (
-            int(x.get("mention_count", 0) or 0),
-            x.get("published_at") or "",
-        ),
-        reverse=True,
-    )
-    return fresh[:batch_size]
+def read_text(path: str, default: str = "") -> str:
+    try:
+        with open(path, "r", encoding="utf-8") as fh:
+            return fh.read()
+    except Exception:
+        return default
 
 
-def llm_generate(prompt: str) -> str:
-    grok_key = os.environ.get("GROK_API_KEY", "").strip()
-    openai_key = os.environ.get("OPENAI_API_KEY", "").strip()
-
-    if grok_key:
-        resp = requests.post(
-            "https://api.x.ai/v1/chat/completions",
-            headers={
-                "Authorization": f"Bearer {grok_key}",
-                "Content-Type": "application/json",
-            },
-            json={
-                "model": "grok-3-latest",
-                "messages": [{"role": "user", "content": prompt}],
-                "max_tokens": 1800,
-                "temperature": 0.9,
-            },
-            timeout=90,
-        )
-        resp.raise_for_status()
-        return resp.json()["choices"][0]["message"]["content"].strip()
-
-    if openai_key:
-        client = OpenAI(api_key=openai_key)
-        resp = client.chat.completions.create(
-            model="gpt-4o-mini",
-            messages=[{"role": "user", "content": prompt}],
-            max_tokens=1800,
-        )
-        return resp.choices[0].message.content.strip()
-
-    raise RuntimeError("No LLM keys found")
+def write_text(path: str, content: str) -> None:
+    with open(path, "w", encoding="utf-8") as fh:
+        fh.write(content)
 
 
-def build_title() -> str:
+def append_text(path: str, content: str) -> None:
+    current = read_text(path, "")
+    write_text(path, current + content)
+
+
+def normalize_text(text: str) -> str:
+    return re.sub(r"\s+", " ", str(text)).strip()
+
+
+def domain_of(url: str) -> str:
+    try:
+        return urlparse(url).netloc.lower().replace("www.", "")
+    except Exception:
+        return ""
+
+
+def build_ref(url: str, label: str | None = None) -> str:
+    safe_url = str(url).strip()
+    safe_label = str(label or safe_url).strip()
+    return f"<ref>[{safe_url} {safe_label}], accessed {today_utc()}</ref>"
+
+
+def short_history_append(path: str, title: str, body: str) -> None:
     stamp = datetime.now(timezone.utc).strftime("%Y-%m-%d %H:%M UTC")
-    return f"GK Network Log Entry — {stamp}"
+    block = f"\n\n---\n## {stamp} — {title}\n\n{body.strip()}\n"
+    combined = (read_text(path, "") + block)[-50000:]
+    write_text(path, combined)
 
 
-def post_to_telegram(title: str, part1: str, part2: str, image_path: str | None):
-    token = os.environ.get("TELEGRAM_BOT_TOKEN", "").strip()
-    chat_ids = [c.strip() for c in os.environ.get("CHANNEL_CHAT_IDS", "").split(",") if c.strip()]
-
-    if not token or not chat_ids:
-        print("[telegram] missing config")
-        return
-
-    for chat_id in chat_ids:
-        requests.post(
-            f"https://api.telegram.org/bot{token}/sendMessage",
-            json={"chat_id": chat_id, "text": f"{title}\n\n{part1}"},
-        )
-
-        requests.post(
-            f"https://api.telegram.org/bot{token}/sendMessage",
-            json={"chat_id": chat_id, "text": part2},
-        )
-
-        print(f"[telegram] sent to {chat_id}")
+def dedupe_items(items: list[dict]) -> list[dict]:
+    seen = set()
+    out = []
+    for item in items:
+        uid = item.get("id")
+        if not uid or uid in seen:
+            continue
+        seen.add(uid)
+        out.append(item)
+    return out
 
 
-def main():
-    parser = argparse.ArgumentParser()
-    parser.add_argument("--mode", choices=["generate", "send"], default="generate")
-    args = parser.parse_args()
+# -----------------------------
+# SHARED SAM MEMORY (R2 FIRST)
+# -----------------------------
+def _empty_memory() -> dict:
+    return {
+        "last_update": "",
+        "cycle_count": 0,
+        "facts": {
+            "characters": {},
+            "real_people": {},
+            "factions": {},
+            "armies": {},
+            "lore_locations": {},
+            "mechanics": {},
+            "tokens": {},
+            "games": {},
+            "events": {},
+            "brands": {},
+        },
+        "external_facts": {
+            "CONFIRMED": {},
+            "UNVERIFIED": {},
+            "rejected_count": 0,
+        },
+        "web_discovered": {
+            "WEB_CONFIRMED": {},
+            "WEB_UNVERIFIED": {},
+        },
+        "keyword_bank": {},
+        "bibles": {},
+        "latest_focus_plan": {},
+        "delivery": {
+            "telegram": {
+                "posted_ids": [],
+                "last_post_at": None,
+                "latest_lore": {},
+            },
+            "fandom": {
+                "posted_ids": [],
+                "last_post_at": None,
+            },
+        },
+    }
 
-    config = load_config()
-    state = read_json(STATE_FILE, {})
 
-    # -----------------------------
-    # GENERATE MODE
-    # -----------------------------
-    if args.mode == "generate":
-        fresh_items = choose_fresh_items(state, config["batch_size"])
+def load_memory() -> dict:
+    empty = _empty_memory()
 
-        if not fresh_items:
-            print("[telegram] nothing to generate")
-            return
+    if _r2_enabled():
+        try:
+            client = _r2_client()
+            obj = client.get_object(Bucket=R2_BUCKET, Key=R2_KEY)
+            memory = json.loads(obj["Body"].read().decode("utf-8"))
+            for key, val in empty.items():
+                if key not in memory:
+                    memory[key] = val
+                elif isinstance(val, dict):
+                    for sub_key, sub_val in val.items():
+                        if sub_key not in memory[key]:
+                            memory[key][sub_key] = sub_val
+                        elif isinstance(sub_val, dict):
+                            for sub_sub_key, sub_sub_val in sub_val.items():
+                                if sub_sub_key not in memory[key][sub_key]:
+                                    memory[key][sub_key][sub_sub_key] = sub_sub_val
+            return memory
+        except Exception as exc:
+            print(f"[utils] R2 load failed: {exc}")
 
-        prompt = "Continue the GraffPUNKS story using these updates:\n\n"
-        for i in fresh_items:
-            prompt += f"- {i.get('title')} :: {i.get('summary')}\n"
+    if os.path.exists("sam-memory.json"):
+        try:
+            with open("sam-memory.json", "r", encoding="utf-8") as fh:
+                memory = json.load(fh)
+            for key, val in empty.items():
+                if key not in memory:
+                    memory[key] = val
+            return memory
+        except Exception:
+            pass
 
-        text = llm_generate(prompt)
+    return empty
 
-        title = build_title()
 
-        write_json("latest-lore.json", {
-            "title": title,
-            "part1": text[:3000],
-            "part2": text[3000:3800],
-            "used_item_ids": [i["id"] for i in fresh_items]
+def save_memory(memory: dict) -> None:
+    payload = json.dumps(memory, indent=2, ensure_ascii=False).encode("utf-8")
+
+    if _r2_enabled():
+        try:
+            client = _r2_client()
+            client.put_object(
+                Bucket=R2_BUCKET,
+                Key=R2_KEY,
+                Body=payload,
+                ContentType="application/json",
+            )
+        except Exception as exc:
+            print(f"[utils] R2 save failed: {exc}")
+
+    with open("sam-memory.json", "wb") as fh:
+        fh.write(payload)
+
+
+def get_delivery_state(memory: dict, channel: str) -> dict:
+    delivery = memory.setdefault("delivery", {})
+    if channel == "telegram":
+        return delivery.setdefault("telegram", {
+            "posted_ids": [],
+            "last_post_at": None,
+            "latest_lore": {},
         })
+    if channel == "fandom":
+        return delivery.setdefault("fandom", {
+            "posted_ids": [],
+            "last_post_at": None,
+        })
+    return delivery.setdefault(channel, {})
 
-        print("[telegram] generated")
-        return
 
-    # -----------------------------
-    # SEND MODE
-    # -----------------------------
-    if args.mode == "send":
-        latest = read_json("latest-lore.json", {})
+def is_delivered(memory: dict, channel: str, item_id: str) -> bool:
+    state = get_delivery_state(memory, channel)
+    return item_id in state.get("posted_ids", [])
 
-        if not latest:
-            print("[telegram] no lore")
-            return
 
-        post_to_telegram(
-            latest.get("title"),
-            latest.get("part1"),
-            latest.get("part2"),
-            None
-        )
+def mark_delivered(memory: dict, channel: str, item_ids: list[str]) -> dict:
+    state = get_delivery_state(memory, channel)
+    merged = list(set(state.get("posted_ids", []) + list(item_ids)))
+    state["posted_ids"] = merged[-8000:]
+    state["last_post_at"] = now_iso()
+    return memory
 
-        used_ids = set(latest.get("used_item_ids", []))
 
-        for item in state.get("items", []):
-            if item.get("id") in used_ids:
-                item["telegram_done"] = True
+def save_latest_lore_to_memory(
+    memory: dict,
+    title: str,
+    part1: str,
+    part2: str,
+    notes: str,
+    used_items: list[dict],
+) -> dict:
+    state = get_delivery_state(memory, "telegram")
+    state["latest_lore"] = {
+        "title": title,
+        "part1": part1,
+        "part2": part2,
+        "notes": notes,
+        "generated_at": now_iso(),
+        "used_item_ids": [i["id"] for i in used_items],
+        "used_item_titles": [i.get("title", "") for i in used_items],
+    }
+    return memory
 
-        write_json(STATE_FILE, state)
 
-        print("[telegram] sent + marked")
+def get_latest_lore_from_memory(memory: dict) -> dict:
+    state = get_delivery_state(memory, "telegram")
+    return state.get("latest_lore", {}) or {}
+
+
+# -----------------------------
+# EXISTING FANDOM / TELEGRAM HELPERS
+# -----------------------------
+def fandom_connect():
+    wiki_url = os.environ.get("FANDOM_WIKI_URL", "").strip()
+    user = os.environ.get("FANDOM_BOT_USER", "").strip()
+    password = os.environ.get("FANDOM_BOT_PASSWORD", "").strip()
+
+    if not wiki_url or not user or not password:
+        raise RuntimeError("Missing FANDOM_WIKI_URL, FANDOM_BOT_USER, or FANDOM_BOT_PASSWORD")
+
+    parsed = urlparse(wiki_url)
+    host = parsed.netloc
+    path = parsed.path.strip("/")
+
+    site = mwclient.Site(host, path="/" if not path else f"/{path}/", scheme="https")
+    site.login(user, password)
+    return site
+
+
+def fandom_get_page_text(site, title: str) -> str:
+    page = site.pages[title]
+    try:
+        return page.text()
+    except Exception:
+        return ""
+
+
+def fandom_save_page(site, title: str, content: str, summary: str) -> None:
+    page = site.pages[title]
+    page.save(content, summary=summary)
+
+
+def ensure_heading(text: str, heading: str) -> str:
+    marker = f"== {heading} =="
+    if marker in text:
+        return text
+    return text.rstrip() + f"\n\n{marker}\n\n"
+
+
+def has_marker(text: str, uid: str) -> bool:
+    return f"<!-- GK-TF-BOT:{uid} -->" in text
+
+
+def build_update_block(item: dict) -> str:
+    uid = item["id"]
+    date = item.get("published_at") or item.get("updated_at") or item.get("detected_at") or today_utc()
+    date = str(date)[:10]
+    title = item.get("title") or "Untitled update"
+    summary = normalize_text(item.get("summary") or item.get("description") or "")
+    source_url = item.get("source_url") or item.get("url") or ""
+    source_name = item.get("source_name") or domain_of(source_url) or "Source"
+    ref = build_ref(source_url, source_name) if source_url else ""
+    return (
+        f"<!-- GK-TF-BOT:{uid} -->\n"
+        f"* {date} — '''{title}''': {summary} {ref}"
+    ).strip()
+
+
+def append_under_latest_updates(text: str, block: str) -> str:
+    marker = "== Latest Updates =="
+    text = ensure_heading(text, "Latest Updates")
+    pos = text.find(marker)
+    if pos == -1:
+        return text.rstrip() + "\n\n" + block + "\n"
+    insert_at = pos + len(marker)
+    return text[:insert_at] + "\n\n" + block + text[insert_at:]
+
+
+def build_recovery_page(page_title: str, items: list[dict]) -> str:
+    overview_parts = []
+    sources = []
+
+    for item in items[:5]:
+        title = item.get("title") or "Update"
+        summary = normalize_text(item.get("summary") or item.get("description") or "")
+        if summary:
+            overview_parts.append(f"{title}: {summary}")
+        src = item.get("source_url") or item.get("url")
+        if src:
+            sources.append(src)
+
+    overview = " ".join(overview_parts)[:1400].strip()
+    if not overview:
+        overview = f"{page_title} is being rebuilt from approved source data."
+
+    unique_sources = []
+    seen = set()
+    for src in sources:
+        if src in seen:
+            continue
+        seen.add(src)
+        unique_sources.append(src)
+
+    source_lines = "\n".join(f"* [{src} {domain_of(src) or src}]" for src in unique_sources)
+    latest_blocks = "\n".join(build_update_block(i) for i in items)
+
+    return f"""= {page_title} =
+
+== Overview ==
+
+{overview}
+
+== Details ==
+
+This page was rebuilt automatically because it was empty or near-empty. It is populated only from approved source data from the main brain pipeline.
+
+== Latest Updates ==
+
+{latest_blocks}
+
+== Sources ==
+
+{source_lines}
+""".strip() + "\n"
+
+
+def telegram_send_message(bot_token: str, chat_id: str, text: str) -> dict:
+    resp = requests.post(
+        f"https://api.telegram.org/bot{bot_token}/sendMessage",
+        json={"chat_id": chat_id, "text": text[:4096]},
+        timeout=30,
+    )
+    resp.raise_for_status()
+    return resp.json()
+
+
+def group_by_page(items: list[dict]) -> dict[str, list[dict]]:
+    grouped = defaultdict(list)
+    for item in items:
+        page = item.get("wiki_page") or "GK Brain Updates"
+        grouped[page].append(item)
+    return dict(grouped)
