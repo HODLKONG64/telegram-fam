@@ -17,6 +17,13 @@ jobs:
     permissions:
       contents: write
 
+    env:
+      R2_BUCKET: ${{ secrets.R2_BUCKET }}
+      R2_KEY: sam-memory.json
+      R2_ENDPOINT_URL: ${{ secrets.R2_ENDPOINT_URL }}
+      R2_ACCESS_KEY_ID: ${{ secrets.R2_ACCESS_KEY_ID }}
+      R2_SECRET_ACCESS_KEY: ${{ secrets.R2_SECRET_ACCESS_KEY }}
+
     steps:
       - name: Checkout repo
         uses: actions/checkout@v4
@@ -31,12 +38,7 @@ jobs:
           pip install --upgrade pip
           pip install --no-cache-dir -r requirements.txt
 
-      - name: Ingest Main Brain Export
-        run: python ingest-brain.py
-        env:
-          MAIN_BRAIN_EXPORT_URL: ${{ secrets.MAIN_BRAIN_EXPORT_URL }}
-
-      - name: Generate Lore
+      - name: Generate Lore from shared SAM memory
         run: python telegram-arm.py
         env:
           GENERATE_ONLY: "1"
@@ -70,18 +72,16 @@ jobs:
           FANDOM_BOT_USER: ${{ secrets.FANDOM_BOT_USER }}
           FANDOM_BOT_PASSWORD: ${{ secrets.FANDOM_BOT_PASSWORD }}
 
-      - name: Commit state + outputs
+      - name: Commit outputs only
         run: |
           git config user.name "GK Bot"
           git config user.email "gk-bot@users.noreply.github.com"
 
           git add \
-            bot-state.json \
-            main-brain-export.json \
             latest-lore.json \
             image-state.json \
             character-memory.json \
             output/
 
-          git diff --cached --quiet || git commit -m "bot: update state + lore + image + memory [skip ci]"
+          git diff --cached --quiet || git commit -m "bot: update lore + image + memory [skip ci]"
           git push
