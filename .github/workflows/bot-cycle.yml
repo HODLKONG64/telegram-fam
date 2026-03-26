@@ -18,40 +18,103 @@ jobs:
       contents: write
 
     steps:
-      - uses: actions/checkout@v4
+      - name: Checkout repo
+        uses: actions/checkout@v4
 
-      - uses: actions/setup-python@v5
+      - name: Setup Python
+        uses: actions/setup-python@v5
         with:
           python-version: "3.11"
 
-      - run: pip install -r requirements.txt
+      - name: Install dependencies
+        run: |
+          pip install --upgrade pip
+          pip install --no-cache-dir -r requirements.txt
 
-      # 1. INGEST
-      - run: python ingest-brain.py
+      # -----------------------------
+      # 1. INGEST MAIN BRAIN EXPORT
+      # -----------------------------
+      - name: Ingest Main Brain Export
+        run: python ingest-brain.py
         env:
           MAIN_BRAIN_EXPORT_URL: ${{ secrets.MAIN_BRAIN_EXPORT_URL }}
 
-      # 2. GENERATE ONLY
-      - run: python telegram-arm.py --mode generate
+      # -----------------------------
+      # 2. GENERATE LORE ONLY
+      # -----------------------------
+      - name: Generate Lore
+        run: python telegram-arm.py --mode generate
         env:
+          ANTHROPIC_API_KEY: ${{ secrets.ANTHROPIC_API_KEY }}
           GROK_API_KEY: ${{ secrets.GROK_API_KEY }}
           OPENAI_API_KEY: ${{ secrets.OPENAI_API_KEY }}
+          R2_ENDPOINT_URL: ${{ secrets.R2_ENDPOINT_URL }}
+          R2_ACCESS_KEY_ID: ${{ secrets.R2_ACCESS_KEY_ID }}
+          R2_SECRET_ACCESS_KEY: ${{ secrets.R2_SECRET_ACCESS_KEY }}
+          R2_BUCKET: ${{ secrets.R2_BUCKET }}
 
-      # 3. IMAGE
-      - run: python image-arm.py
+      # -----------------------------
+      # 3. LOCK CHARACTER TRAITS
+      # -----------------------------
+      - name: Lock Character Traits
+        run: python character-traits.py
+
+      # -----------------------------
+      # 4. GENERATE CHARACTER IMAGE
+      # -----------------------------
+      - name: Generate Character Image
+        run: python image-arm.py
         env:
           OPENAI_API_KEY: ${{ secrets.OPENAI_API_KEY }}
+          GROK_API_KEY: ${{ secrets.GROK_API_KEY }}
 
-      # 4. SEND ONLY
-      - run: python telegram-arm.py --mode send
+      # -----------------------------
+      # 5. UPDATE CHARACTER MEMORY
+      # -----------------------------
+      - name: Update Character Memory
+        run: python character-memory.py
+
+      # -----------------------------
+      # 6. SEND TELEGRAM POST ONLY
+      # -----------------------------
+      - name: Send Telegram Post
+        run: python telegram-arm.py --mode send
         env:
+          ANTHROPIC_API_KEY: ${{ secrets.ANTHROPIC_API_KEY }}
+          GROK_API_KEY: ${{ secrets.GROK_API_KEY }}
+          OPENAI_API_KEY: ${{ secrets.OPENAI_API_KEY }}
           TELEGRAM_BOT_TOKEN: ${{ secrets.TELEGRAM_BOT_TOKEN }}
           CHANNEL_CHAT_IDS: ${{ secrets.CHANNEL_CHAT_IDS }}
+          R2_ENDPOINT_URL: ${{ secrets.R2_ENDPOINT_URL }}
+          R2_ACCESS_KEY_ID: ${{ secrets.R2_ACCESS_KEY_ID }}
+          R2_SECRET_ACCESS_KEY: ${{ secrets.R2_SECRET_ACCESS_KEY }}
+          R2_BUCKET: ${{ secrets.R2_BUCKET }}
 
-      # 5. COMMIT STATE
-      - run: |
+      # -----------------------------
+      # 7. UPDATE FANDOM
+      # -----------------------------
+      - name: Update Fandom Wiki
+        run: python fandom-arm.py
+        env:
+          FANDOM_WIKI_URL: ${{ secrets.FANDOM_WIKI_URL }}
+          FANDOM_BOT_USER: ${{ secrets.FANDOM_BOT_USER }}
+          FANDOM_BOT_PASSWORD: ${{ secrets.FANDOM_BOT_PASSWORD }}
+
+      # -----------------------------
+      # 8. COMMIT LOCAL OUTPUTS
+      # -----------------------------
+      - name: Commit state + outputs
+        run: |
           git config user.name "GK Bot"
           git config user.email "gk-bot@users.noreply.github.com"
-          git add .
-          git commit -m "bot update" || echo "no changes"
+
+          git add \
+            latest-lore.json \
+            image-state.json \
+            character-memory.json \
+            output/ \
+            lore-history.md \
+            sam-memory.json
+
+          git diff --cached --quiet || git commit -m "bot: update lore + image + memory mirror [skip ci]"
           git push
