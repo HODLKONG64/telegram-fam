@@ -18,97 +18,40 @@ jobs:
       contents: write
 
     steps:
-      - name: Checkout repo
-        uses: actions/checkout@v4
+      - uses: actions/checkout@v4
 
-      - name: Setup Python
-        uses: actions/setup-python@v5
+      - uses: actions/setup-python@v5
         with:
           python-version: "3.11"
 
-      - name: Install dependencies
-        run: |
-          pip install --upgrade pip
-          pip install --no-cache-dir -r requirements.txt
+      - run: pip install -r requirements.txt
 
-      # -----------------------------
-      # 1. INGEST MAIN BRAIN
-      # -----------------------------
-      - name: Ingest Main Brain Export
-        run: python ingest-brain.py
+      # 1. INGEST
+      - run: python ingest-brain.py
         env:
           MAIN_BRAIN_EXPORT_URL: ${{ secrets.MAIN_BRAIN_EXPORT_URL }}
 
-      # -----------------------------
-      # 2. GENERATE LORE (NO POST YET)
-      # -----------------------------
-      - name: Generate Lore
-        run: python telegram-arm.py
+      # 2. GENERATE ONLY
+      - run: python telegram-arm.py --mode generate
         env:
-          ANTHROPIC_API_KEY: ${{ secrets.ANTHROPIC_API_KEY }}
           GROK_API_KEY: ${{ secrets.GROK_API_KEY }}
           OPENAI_API_KEY: ${{ secrets.OPENAI_API_KEY }}
-          TELEGRAM_BOT_TOKEN: ""
-          CHANNEL_CHAT_IDS: ""
 
-      # -----------------------------
-      # 3. LOCK CHARACTER TRAITS
-      # -----------------------------
-      - name: Lock Character Traits
-        run: python character-traits.py
-
-      # -----------------------------
-      # 4. GENERATE CHARACTER IMAGE
-      # -----------------------------
-      - name: Generate Character Image
-        run: python image-arm.py
+      # 3. IMAGE
+      - run: python image-arm.py
         env:
           OPENAI_API_KEY: ${{ secrets.OPENAI_API_KEY }}
-          GROK_API_KEY: ${{ secrets.GROK_API_KEY }}
 
-      # -----------------------------
-      # 5. UPDATE CHARACTER MEMORY
-      # -----------------------------
-      - name: Update Character Memory
-        run: python character-memory.py
-
-      # -----------------------------
-      # 6. FINAL TELEGRAM POST
-      # -----------------------------
-      - name: Send Telegram Post
-        run: python telegram-arm.py
+      # 4. SEND ONLY
+      - run: python telegram-arm.py --mode send
         env:
-          ANTHROPIC_API_KEY: ${{ secrets.ANTHROPIC_API_KEY }}
-          GROK_API_KEY: ${{ secrets.GROK_API_KEY }}
-          OPENAI_API_KEY: ${{ secrets.OPENAI_API_KEY }}
           TELEGRAM_BOT_TOKEN: ${{ secrets.TELEGRAM_BOT_TOKEN }}
           CHANNEL_CHAT_IDS: ${{ secrets.CHANNEL_CHAT_IDS }}
 
-      # -----------------------------
-      # 7. UPDATE FANDOM
-      # -----------------------------
-      - name: Update Fandom Wiki
-        run: python fandom-arm.py
-        env:
-          FANDOM_WIKI_URL: ${{ secrets.FANDOM_WIKI_URL }}
-          FANDOM_BOT_USER: ${{ secrets.FANDOM_BOT_USER }}
-          FANDOM_BOT_PASSWORD: ${{ secrets.FANDOM_BOT_PASSWORD }}
-
-      # -----------------------------
-      # 8. COMMIT STATE
-      # -----------------------------
-      - name: Commit state + outputs
-        run: |
+      # 5. COMMIT STATE
+      - run: |
           git config user.name "GK Bot"
           git config user.email "gk-bot@users.noreply.github.com"
-
-          git add \
-            bot-state.json \
-            main-brain-export.json \
-            latest-lore.json \
-            image-state.json \
-            character-memory.json \
-            output/
-
-          git diff --cached --quiet || git commit -m "bot: update state + lore + image + memory [skip ci]"
+          git add .
+          git commit -m "bot update" || echo "no changes"
           git push
