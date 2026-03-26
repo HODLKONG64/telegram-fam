@@ -1,0 +1,9 @@
+__pycache__/
+*.py[cod]
+*.pyo
+.env
+*.json.bak
+sam-memory.json
+latest-lore.json
+character-memory.json
+image-state.json
