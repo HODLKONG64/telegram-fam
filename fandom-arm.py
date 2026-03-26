@@ -7,6 +7,7 @@ from utils import (
     fandom_save_page,
     group_by_page,
     has_marker,
+    load_memory,
     now_iso,
     read_json,
     write_json,
@@ -17,6 +18,18 @@ MIN_EXISTING_PAGE_LEN = 300
 
 
 def main() -> None:
+    # Guard: abort if memory has no entity facts yet (blank/reset state).
+    # This prevents posting stale or empty content to Fandom when memory
+    # has been freshly wiped.
+    memory = load_memory()
+    facts = memory.get("facts", {})
+    if not isinstance(facts, dict) or not any(
+        isinstance(v, dict) and v for v in facts.values()
+    ):
+        print("[fandom] SKIP: shared memory is empty or blank — no entities to post. "
+              "Run the brain pipeline first.")
+        return
+
     state = read_json(STATE_FILE, {})
     items = state.get("items", [])
     fresh = [i for i in items if not i.get("fandom_done")]

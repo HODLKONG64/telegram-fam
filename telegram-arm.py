@@ -1,4 +1,3 @@
-import json
 import os
 from datetime import datetime, timezone
 
@@ -50,7 +49,7 @@ def _build_item(category: str, name: str, data: dict) -> dict:
         "mention_count": int(data.get("mention_count", 0)),
         "faction_allegiance": data.get("faction_allegiance", ""),
         "type": data.get("type", category),
-        "wiki_page": name,
+        "wiki_page": f"wiki/{name.lower().replace(' ', '-').replace('_', '-')}.html",
         "detected_at": now_iso(),
     }
 
@@ -143,6 +142,18 @@ def save_latest_lore_file(title: str, part1: str, part2: str, notes: str) -> Non
 
 def generate_mode() -> None:
     memory = load_memory()
+
+    # Guard: abort if memory has no entity facts yet (blank/reset state).
+    # This prevents posting the stale fallback "SAM Memory Pulse" string
+    # to Telegram when memory has been freshly wiped.
+    facts = memory.get("facts", {})
+    if not isinstance(facts, dict) or not any(
+        isinstance(v, dict) and v for v in facts.values()
+    ):
+        print("[telegram-arm] SKIP: shared memory is empty or blank — no entities to post. "
+              "Run the brain pipeline first.")
+        return
+
     used_items = pick_items(memory, limit=3)
     title, part1, part2, notes = compose_lore(used_items)
 
