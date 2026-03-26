@@ -36,7 +36,7 @@ def _build_item(category: str, name: str, data: dict) -> dict:
         data.get("lore_details")
         or data.get("role_description")
         or (facts[0] if facts else "")
-        or f"{name} is active inside the SAM memory graph."
+        or f"{name} is part of the Crypto Moonboys universe."
     )
 
     return {
@@ -91,14 +91,14 @@ def pick_items(memory: dict, limit: int = 3) -> list[dict]:
 
 def compose_lore(items: list[dict]) -> tuple[str, str, str, str]:
     if not items:
-        title = "SAM Memory Pulse"
-        part1 = "The shared SAM memory is live, but no fresh entity slice was available for Telegram this cycle."
+        title = "Crypto Moonboys Memory Pulse"
+        part1 = "The Crypto Moonboys memory is live, but no fresh entity slice was available for Telegram this cycle."
         part2 = "The delivery layer is now wired to the real entity graph instead of the old export pipeline."
         notes = "No entity items were available."
         return title, part1, part2, notes
 
     lead = items[0]
-    title = f"SAM SIGNAL: {lead['title']}"
+    title = f"Crypto Moonboys: {lead['title']}"
 
     intro_lines = []
     detail_lines = []
@@ -106,7 +106,7 @@ def compose_lore(items: list[dict]) -> tuple[str, str, str, str]:
 
     for item in items:
         intro_lines.append(
-            f"{item['title']} is active in the shared SAM memory under {item['category'].replace('_', ' ')}."
+            f"{item['title']} is registered in the Crypto Moonboys memory under {item['category'].replace('_', ' ')}."
         )
 
         block = item["summary"]

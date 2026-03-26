@@ -1,8 +1,8 @@
 {
-  "update_blend_min": 0.05,
-  "update_blend_max": 0.10,
-  "brain_signal_max": 0.20,
-  "history_chars": 12000,
-  "story_first": true,
-  "batch_size": 5
+  "identity": "Crypto Moonboys Wiki Bot",
+  "wiki_base": "https://crypto-moonboys.github.io",
+  "wiki_url_pattern": "/wiki/{slug}.html",
+  "sam_prefix_blocked": true,
+  "delivery_channels": ["telegram", "fandom"],
+  "blank_memory_behavior": "skip"
 }

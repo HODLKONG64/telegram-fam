@@ -3,7 +3,7 @@ import os
 import re
 from datetime import datetime, timezone
 
-from utils import read_json, write_json
+from utils import load_memory, read_json, write_json
 
 CHARACTER_MEMORY_FILE = "character-memory.json"
 LATEST_LORE_FILE = "latest-lore.json"
@@ -180,6 +180,12 @@ def merge_character(existing: dict, incoming: dict, lore: str, image_path: str |
 
 
 def main() -> None:
+    shared_memory = load_memory()
+    delivery = shared_memory.get("delivery", {})
+    if not delivery.get("telegram") and not delivery.get("fandom"):
+        print("[character-memory] Memory blank — skipping delivery")
+        return
+
     latest_lore = load_latest_lore()
     image_state = load_image_state()
     memory = load_character_memory()
