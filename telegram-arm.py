@@ -1,5 +1,6 @@
 import json
 import os
+import re
 from datetime import datetime, timezone
 
 from utils import (
@@ -19,6 +20,10 @@ LATEST_LORE_FILE = "latest-lore.json"
 
 def now_iso() -> str:
     return datetime.now(timezone.utc).isoformat().replace("+00:00", "Z")
+
+
+def _slugify(text: str) -> str:
+    return re.sub(r"[^a-z0-9]+", "-", text.lower()).strip("-")
 
 
 def _fact_text(fact) -> str:
@@ -51,6 +56,7 @@ def _build_item(category: str, name: str, data: dict) -> dict:
         "faction_allegiance": data.get("faction_allegiance", ""),
         "type": data.get("type", category),
         "wiki_page": name,
+        "wiki_url": f"wiki/{_slugify(name)}.html",
         "detected_at": now_iso(),
     }
 
@@ -143,6 +149,18 @@ def save_latest_lore_file(title: str, part1: str, part2: str, notes: str) -> Non
 
 def generate_mode() -> None:
     memory = load_memory()
+
+    # Guard: do not post stale fallback lore if shared memory is blank/reset
+    _facts = memory.get("facts", {})
+    _has_any_entity = any(
+        len(entities) > 0
+        for entities in _facts.values()
+        if isinstance(entities, dict)
+    )
+    if not _has_any_entity:
+        print("[telegram-arm] shared memory is blank — skipping post to avoid stale fallback lore")
+        raise SystemExit(0)
+
     used_items = pick_items(memory, limit=3)
     title, part1, part2, notes = compose_lore(used_items)
 

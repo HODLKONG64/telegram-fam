@@ -4,5 +4,7 @@
   "brain_signal_max": 0.20,
   "history_chars": 12000,
   "story_first": true,
-  "batch_size": 5
+  "batch_size": 5,
+  "sam_prefix_blocked": true,
+  "blank_memory_behavior": "skip"
 }
