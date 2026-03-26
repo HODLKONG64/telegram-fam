@@ -31,17 +31,11 @@ jobs:
           pip install --upgrade pip
           pip install --no-cache-dir -r requirements.txt
 
-      # -----------------------------
-      # 1. INGEST MAIN BRAIN
-      # -----------------------------
       - name: Ingest Main Brain Export
         run: python ingest-brain.py
         env:
           MAIN_BRAIN_EXPORT_URL: ${{ secrets.MAIN_BRAIN_EXPORT_URL }}
 
-      # -----------------------------
-      # 2. GENERATE LORE ONLY
-      # -----------------------------
       - name: Generate Lore
         run: python telegram-arm.py
         env:
@@ -50,30 +44,18 @@ jobs:
           GROK_API_KEY: ${{ secrets.GROK_API_KEY }}
           OPENAI_API_KEY: ${{ secrets.OPENAI_API_KEY }}
 
-      # -----------------------------
-      # 3. LOCK CHARACTER TRAITS
-      # -----------------------------
       - name: Lock Character Traits
         run: python character-traits.py
 
-      # -----------------------------
-      # 4. GENERATE CHARACTER IMAGE
-      # -----------------------------
       - name: Generate Character Image
         run: python image-arm.py
         env:
           OPENAI_API_KEY: ${{ secrets.OPENAI_API_KEY }}
           GROK_API_KEY: ${{ secrets.GROK_API_KEY }}
 
-      # -----------------------------
-      # 5. UPDATE CHARACTER MEMORY
-      # -----------------------------
       - name: Update Character Memory
         run: python character-memory.py
 
-      # -----------------------------
-      # 6. SEND TELEGRAM POST
-      # -----------------------------
       - name: Send Telegram Post
         run: python telegram-arm.py
         env:
@@ -81,9 +63,6 @@ jobs:
           TELEGRAM_BOT_TOKEN: ${{ secrets.TELEGRAM_BOT_TOKEN }}
           CHANNEL_CHAT_IDS: ${{ secrets.CHANNEL_CHAT_IDS }}
 
-      # -----------------------------
-      # 7. UPDATE FANDOM
-      # -----------------------------
       - name: Update Fandom Wiki
         run: python fandom-arm.py
         env:
@@ -91,9 +70,6 @@ jobs:
           FANDOM_BOT_USER: ${{ secrets.FANDOM_BOT_USER }}
           FANDOM_BOT_PASSWORD: ${{ secrets.FANDOM_BOT_PASSWORD }}
 
-      # -----------------------------
-      # 8. COMMIT STATE
-      # -----------------------------
       - name: Commit state + outputs
         run: |
           git config user.name "GK Bot"
